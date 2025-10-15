@@ -1,0 +1,192 @@
+version: '3.8'
+
+services:
+  # OLLAMA Service with GPU support
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sira-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./ollama:/app/ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_QUEUE=512
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - sira-gpu-network
+
+  # GPU Service
+  gpu-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: sira-gpu-service
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+      - ./tmp:/app/tmp
+    environment:
+      # Application
+      - APP_NAME=SIRA GPU Service
+      - APP_VERSION=1.0.0
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8002
+      - WORKERS=1
+      
+      # OLLAMA Configuration
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_TIMEOUT=300
+      - OLLAMA_MAX_RETRIES=3
+      
+      # Model Configuration
+      - MODEL_NAME=gemma2:9b
+      - MODEL_TEMPERATURE=0.7
+      - MODEL_MAX_TOKENS=4096
+      - MODEL_TOP_P=0.9
+      - MODEL_TOP_K=40
+      
+      # GPU Configuration
+      - GPU_MEMORY_FRACTION=0.8
+      - GPU_DEVICE_ID=0
+      - ENABLE_GPU_MONITORING=true
+      
+      # Cache Configuration
+      - ENABLE_CACHE=true
+      - CACHE_TTL=3600
+      - CACHE_MAX_SIZE=1000
+      - REDIS_URL=redis://redis:6379/0
+      
+      # Rate Limiting
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW=60
+      
+      # CORS
+      - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","https://sira-frontend.web.app"]
+      
+      # Monitoring
+      - ENABLE_METRICS=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      ollama:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 4G
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - sira-gpu-network
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: sira-redis-gpu
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_gpu_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sira-gpu-network
+
+  # Prometheus for metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sira-prometheus-gpu
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_gpu_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - sira-gpu-network
+    profiles:
+      - monitoring
+
+  # Grafana for visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sira-grafana-gpu
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_gpu_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    networks:
+      - sira-gpu-network
+    profiles:
+      - monitoring
+
+volumes:
+  ollama_data:
+    driver: local
+  redis_gpu_data:
+    driver: local
+  prometheus_gpu_data:
+    driver: local
+  grafana_gpu_data:
+    driver: local
+
+networks:
+  sira-gpu-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

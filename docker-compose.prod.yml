@@ -1,0 +1,354 @@
+version: '3.8'
+
+# SIRA Production Docker Compose Configuration
+# Sistema Inteligente de Recuperação Ambiental
+
+services:
+  # Backend Service (FastAPI + ADK)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: sira-backend-prod
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+      
+      # Security
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ORIGINS=["https://sira.yourdomain.com"]
+      
+      # Google Cloud
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      
+      # Firebase
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE}
+      - FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}
+      
+      # External Services
+      - RAG_SERVICE_URL=http://rag-service:8001
+      - GPU_SERVICE_URL=http://gpu-service:8002
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      
+      # Performance
+      - CACHE_TTL=7200
+      - MAX_CONCURRENT_REQUESTS=50
+      - REQUEST_TIMEOUT=60
+      
+    volumes:
+      - ./credentials:/app/credentials:ro
+      - ./logs/backend:/app/logs
+    depends_on:
+      - redis
+      - rag-service
+      - gpu-service
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Frontend Service (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    container_name: sira-frontend-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - NODE_ENV=production
+      - VITE_API_BASE_URL=https://api.sira.yourdomain.com
+      - VITE_FIREBASE_CONFIG=${VITE_FIREBASE_CONFIG}
+    volumes:
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/frontend:/var/log/nginx
+    depends_on:
+      - backend
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # RAG Service (TypeScript + Genkit + Firebase)
+  rag-service:
+    build:
+      context: ./rag-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: sira-rag-service-prod
+    ports:
+      - "8001:8001"
+    environment:
+      - NODE_ENV=production
+      - PORT=8001
+      - LOG_LEVEL=info
+      
+      # Google Cloud
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION}
+      
+      # Firebase
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE}
+      
+      # Performance
+      - MAX_CONCURRENT_INGESTIONS=5
+      - BATCH_SIZE=100
+      - EMBEDDING_CACHE_TTL=86400
+      
+    volumes:
+      - ./credentials:/app/credentials:ro
+      - ./logs/rag-service:/app/logs
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.8'
+        reservations:
+          memory: 512M
+          cpus: '0.4'
+
+  # GPU Service (Python + OLLAMA + Gemma 2)
+  gpu-service:
+    build:
+      context: ./gpu-service
+      dockerfile: Dockerfile
+      target: production
+    container_name: sira-gpu-service-prod
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PORT=8002
+      - LOG_LEVEL=INFO
+      
+      # Model Configuration
+      - MODEL_NAME=gemma2:9b
+      - MODEL_TEMPERATURE=0.7
+      - MODEL_MAX_TOKENS=4096
+      
+      # OLLAMA
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_TIMEOUT=300
+      - OLLAMA_MAX_RETRIES=3
+      
+      # Performance
+      - ENABLE_CACHE=true
+      - CACHE_TTL=7200
+      - REDIS_URL=redis://redis:6379/1
+      - MAX_CONCURRENT_REQUESTS=10
+      
+      # GPU
+      - GPU_MEMORY_FRACTION=0.8
+      - ENABLE_GPU_MONITORING=true
+      
+    volumes:
+      - ./logs/gpu-service:/app/logs
+      - ./cache/gpu-service:/app/cache
+    depends_on:
+      - redis
+      - ollama
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # OLLAMA Service (for GPU Service)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sira-ollama-prod
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_MAX_LOADED_MODELS=2
+      - OLLAMA_NUM_PARALLEL=4
+      - OLLAMA_MAX_QUEUE=10
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./gpu-service/ollama:/app/ollama
+      - ./logs/ollama:/var/log/ollama
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: sira-redis-prod
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./redis.prod.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./logs/redis:/var/log/redis
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    networks:
+      - sira-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sira-prometheus-prod
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+      - ./logs/prometheus:/var/log/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - sira-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  # Grafana Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sira-grafana-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_SERVER_DOMAIN=monitoring.sira.yourdomain.com
+      - GF_SERVER_ROOT_URL=https://monitoring.sira.yourdomain.com
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./logs/grafana:/var/log/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - sira-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.3'
+
+# Networks
+networks:
+  sira-network:
+    driver: bridge
+    name: sira-network-prod
+
+# Volumes
+volumes:
+  redis_data:
+    name: sira-redis-data-prod
+  prometheus_data:
+    name: sira-prometheus-data-prod
+  grafana_data:
+    name: sira-grafana-data-prod
+  ollama_data:
+    name: sira-ollama-data-prod

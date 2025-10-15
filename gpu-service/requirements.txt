@@ -1,0 +1,49 @@
+# SIRA GPU Service - Python Dependencies
+# FastAPI and ASGI server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# HTTP client for OLLAMA
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Data validation and serialization
+pydantic==2.5.0
+pydantic-settings==2.1.0
+pydantic-settings==2.1.0
+
+# Async support
+asyncio-mqtt==0.16.1
+
+# Monitoring and logging
+prometheus-client==0.19.0
+structlog==23.2.0
+python-json-logger==2.0.7
+
+# Environment and configuration
+python-dotenv==1.0.0
+python-multipart==0.0.6
+
+# GPU utilities (optional, for direct GPU access)
+nvidia-ml-py==12.535.133
+psutil==5.9.6
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx==0.25.2
+
+# Development
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Caching
+redis==5.0.1

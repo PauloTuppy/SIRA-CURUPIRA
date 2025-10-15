@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Knowledge base collection - read-only for authenticated users
+    match /knowledge_base/{document} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.token.admin == true;
+    }
+    
+    // Embeddings collection - read-only for authenticated users
+    match /embeddings/{document} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.token.admin == true;
+    }
+    
+    // Analyses collection - read/write for authenticated users
+    match /analyses/{document} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Ingestion jobs collection - read for authenticated users, write for admins
+    match /ingestion_jobs/{document} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.token.admin == true;
+    }
+    
+    // Health check collection - allow read/write for system
+    match /health_check/{document} {
+      allow read, write: if true;
+    }
+    
+    // Default deny all other documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
