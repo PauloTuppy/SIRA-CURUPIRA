@@ -52,7 +52,7 @@ class AnalysisConfigRequest(BaseModel):
     detail_level: Optional[str] = Field(
         "standard",
         description="Nível de detalhamento da análise",
-        regex="^(basic|standard|detailed)$"
+        pattern="^(basic|standard|detailed)$"
     )
     include_recommendations: bool = Field(
         True,
@@ -65,7 +65,7 @@ class AnalysisConfigRequest(BaseModel):
     language: str = Field(
         "pt-BR",
         description="Idioma da resposta",
-        regex="^(pt-BR|en-US|es-ES)$"
+        pattern="^(pt-BR|en-US|es-ES)$"
     )
 
 

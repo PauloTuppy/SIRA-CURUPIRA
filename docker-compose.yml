@@ -91,7 +91,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: sira-frontend
     ports:
       - "5173:5173"

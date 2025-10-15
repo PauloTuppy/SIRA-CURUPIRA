@@ -1,11 +1,25 @@
+<div align="center">
+  <img src="docs/SIRA-banner.svg" alt="SIRA - Sistema Inteligente de Recuperação Ambiental" width="100%"/>
+</div>
+
+<div align="center">
+
 # 🌍 SIRA - Sistema Inteligente de Recuperação Ambiental
 
 **Sistema Inteligente de Recuperação Ambiental** - Uma plataforma completa para análise e recuperação de ecossistemas brasileiros usando IA avançada e dados científicos.
+
+</div>
+
+<div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Node.js 18+](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
+[![GitHub Stars](https://img.shields.io/github/stars/PauloTuppy/SIRA-CURUPIRA?style=social)](https://github.com/PauloTuppy/SIRA-CURUPIRA)
+[![GitHub Forks](https://img.shields.io/github/forks/PauloTuppy/SIRA-CURUPIRA?style=social)](https://github.com/PauloTuppy/SIRA-CURUPIRA)
+
+</div>
 
 ## 🎯 Visão Geral
 

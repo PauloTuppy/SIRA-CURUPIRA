@@ -4,7 +4,8 @@ Configuration settings for the SIRA Backend Service
 
 import os
 from typing import List, Optional
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
@@ -122,10 +123,11 @@ class Settings(BaseSettings):
     similarity_threshold: float = Field(default=0.7, env="SIMILARITY_THRESHOLD")
     max_retrieval_results: int = Field(default=10, env="MAX_RETRIEVAL_RESULTS")
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False
+    }
         
     @property
     def max_file_size_bytes(self) -> int:
